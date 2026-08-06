@@ -1,4 +1,4 @@
-# Medical Thesis Proposal Writer
+# Bruts-Thesis AI
 
 An AI-powered workflow that automates the generation of medical thesis proposals (Chapters 1–3) using n8n and Large Language Models.
 
