@@ -8,7 +8,7 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "52e0de44-f835-4799-8ab3-f82bf85452b5",
+      "id": "REPLACE_ME",
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
@@ -16,86 +16,86 @@
         0,
         160
       ],
-      "webhookId": "c045f8f3-a5c9-4edf-ac7d-4171113c7a22"
+      "webhookId": "REPLACE_ME"
     },
     {
       "parameters": {
         "assignments": {
           "assignments": [
             {
-              "id": "03b5f4ca-97e1-4dd2-aff5-4a1db1795db4",
+              "id": "REPLACE_ME",
               "name": "body.data.submissionId",
               "value": "={{ $json.body.data.submissionId }}",
               "type": "string"
             },
             {
-              "id": "b66b6840-3d2f-4ec9-9068-0eb8ae27a67b",
+              "id": "REPLACE_ME",
               "name": "body.data.createdAt",
               "value": "={{ $json.body.data.createdAt }}",
               "type": "string"
             },
             {
-              "id": "a63e5293-e325-4508-a1a6-c506823cc6d2",
+              "id": "REPLACE_ME",
               "name": "body.data.fields[0].label",
               "value": "={{ $json.body.data.fields[0].value }}",
               "type": "string"
             },
             {
-              "id": "eb332cf3-d86e-40cc-bd14-dc7881c941cf",
+              "id": "REPLACE_ME",
               "name": "body.data.fields[1].label",
               "value": "={{ $json.body.data.fields[1].value }}",
               "type": "string"
             },
             {
-              "id": "b48174e0-33c2-4d64-9fd1-95d2b36a0b22",
+              "id": "REPLACE_ME",
               "name": "body.data.fields[2].label",
               "value": "={{ $json.body.data.fields[2].value }}",
               "type": "string"
             },
             {
-              "id": "310e8754-ec54-400f-ad10-6445ad6f6664",
+              "id": "REPLACE_ME",
               "name": "body.data.fields[3].label",
               "value": "={{ $json.body.data.fields[3].value }}",
               "type": "string"
             },
             {
-              "id": "297eefda-b45f-44d0-86a0-5d896d274a50",
+              "id": "REPLACE_ME",
               "name": "body.data.fields[4].label",
               "value": "={{ $json.body.data.fields[4].value }}",
               "type": "string"
             },
             {
-              "id": "1c8f1c3f-54f1-4e13-9043-a288a465e73d",
+              "id": "REPLACE_ME",
               "name": "body.data.fields[5].label",
               "value": "={{ $json.body.data.fields[5].value }}",
               "type": "string"
             },
             {
-              "id": "c14d6930-54f7-4272-8e31-4791f660f431",
+              "id": "REPLACE_ME",
               "name": "body.data.fields[6].label",
               "value": "={{ $json.body.data.fields[6].value }}",
               "type": "string"
             },
             {
-              "id": "2b493dee-1dd2-4b5d-bd0f-a272fa0bbf69",
+              "id": "REPLACE_ME",
               "name": "body.data.fields[7].label",
               "value": "={{ $json.body.data.fields[7].value }}",
               "type": "string"
             },
             {
-              "id": "015436f3-aca6-4f0f-9f73-c6d531904b03",
+              "id": "REPLACE_ME",
               "name": "body.data.fields[8].label",
               "value": "={{ $json.body.data.fields[8].value }}",
               "type": "string"
             },
             {
-              "id": "175ac184-2de1-42d9-ad0c-4693eb7b432c",
+              "id": "REPLACE_ME",
               "name": "body.data.fields[9].label",
               "value": "={{ $json.body.data.fields[9].value }}",
               "type": "string"
             },
             {
-              "id": "a9ee2757-d592-4619-b474-a5c29b5458ba",
+              "id": "REPLACE_ME",
               "name": "body.data.fields[10].label",
               "value": "={{ $json.body.data.fields[10].value[0].url }}",
               "type": "string"
@@ -104,7 +104,7 @@
         },
         "options": {}
       },
-      "id": "2ad7b1b2-3d53-4de4-a5d6-8ebdeceba652",
+      "id": "REPLACE_ME",
       "name": "Edit Fields",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
@@ -121,14 +121,14 @@
           "value": "1ApADwFiobcQU2oQ6k8Qy6bCb-9gC6RQkhiwkB-dAya4",
           "mode": "list",
           "cachedResultName": "Thesis Requests",
-          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ApADwFiobcQU2oQ6k8Qy6bCb-9gC6RQkhiwkB-dAya4/edit?usp=drivesdk"
+          "cachedResultUrl": "REPLACE_WITH_YOUR_RESOURCE"
         },
         "sheetName": {
           "__rl": true,
           "value": "gid=0",
           "mode": "list",
           "cachedResultName": "Thesis Requests",
-          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ApADwFiobcQU2oQ6k8Qy6bCb-9gC6RQkhiwkB-dAya4/edit#gid=0"
+          "cachedResultUrl": "REPLACE_WITH_YOUR_RESOURCE"
         },
         "columns": {
           "mappingMode": "defineBelow",
@@ -153,7 +153,7 @@
           ],
           "schema": [
             {
-              "id": "submission_id",
+              "id": "REPLACE_ME",
               "displayName": "submission_id",
               "required": false,
               "defaultMatch": false,
@@ -173,7 +173,7 @@
               "removed": false
             },
             {
-              "id": "student_name",
+              "id": "REPLACE_ME",
               "displayName": "student_name",
               "required": false,
               "defaultMatch": false,
@@ -183,7 +183,7 @@
               "removed": false
             },
             {
-              "id": "reg_number",
+              "id": "REPLACE_ME",
               "displayName": "reg_number",
               "required": false,
               "defaultMatch": false,
@@ -193,7 +193,7 @@
               "removed": false
             },
             {
-              "id": "project_title",
+              "id": "REPLACE_ME",
               "displayName": "project_title",
               "required": false,
               "defaultMatch": false,
@@ -223,7 +223,7 @@
               "removed": false
             },
             {
-              "id": "institution",
+              "id": "REPLACE_ME",
               "displayName": "institution",
               "required": false,
               "defaultMatch": false,
@@ -233,7 +233,7 @@
               "removed": false
             },
             {
-              "id": "supervisor",
+              "id": "REPLACE_ME",
               "displayName": "supervisor",
               "required": false,
               "defaultMatch": false,
@@ -253,7 +253,7 @@
               "removed": false
             },
             {
-              "id": "study_location",
+              "id": "REPLACE_ME",
               "displayName": "study_location",
               "required": false,
               "defaultMatch": false,
@@ -263,7 +263,7 @@
               "removed": false
             },
             {
-              "id": "study_duration",
+              "id": "REPLACE_ME",
               "displayName": "study_duration",
               "required": false,
               "defaultMatch": false,
@@ -273,7 +273,7 @@
               "removed": false
             },
             {
-              "id": "guideline_uploaded",
+              "id": "REPLACE_ME",
               "displayName": "guideline_uploaded",
               "required": false,
               "defaultMatch": false,
@@ -293,7 +293,7 @@
               "removed": false
             },
             {
-              "id": "output_link",
+              "id": "REPLACE_ME",
               "displayName": "output_link",
               "required": false,
               "defaultMatch": false,
@@ -308,7 +308,7 @@
         },
         "options": {}
       },
-      "id": "494dd1c1-a0ba-4f53-b26d-b0b6d7af675f",
+      "id": "REPLACE_ME",
       "name": "Append or update row in sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
@@ -316,12 +316,7 @@
         448,
         160
       ],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "DqsmQixiaB0zxcVS",
-          "name": "Google Sheets account"
-        }
-      }
+      "credentials": {}
     },
     {
       "parameters": {
@@ -331,7 +326,7 @@
           "systemMessage": "=You are an input validation assistant for an academic thesis writing system.\n\nYour job is to check that the user has provided ALL of the following required fields:\n1. Project Title\n2. Programme of Study (e.g., B.Rad Medical Radiography)\n3. Faculty (e.g., Faculty of Allied Health Sciences)\n4. Institution (e.g., Bayero University, Kano)\n5. Student Full Name\n6. Registration/Matriculation Number\n7. Supervisor's Name\n8. Head of Department (HOD) Name\n\nAlso check for these optional fields (note them if present, do not require them):\n- Study Location\n- Proposed Study Duration\n- Departmental Project Guideline (file attachment)\n\nRULES:\n- If ALL 8 required fields are present and non-empty, output a JSON object with all fields clearly labelled, and end your response with the word VALIDATED on its own line.\n- If ANY required field is missing or empty, list exactly which fields are missing in a polite message. Do NOT output VALIDATED.\n- Do not proceed with any writing. Your only job is validation.\n- Accept any medical or allied health programme (Nursing, Physiotherapy, Medicine, Pharmacy, Radiography, Lab Science, Optometry, Public Health, Anatomy, Physiology, Dentistry, Occupational Therapy, Nutrition, etc.)."
         }
       },
-      "id": "f9895a2d-99fe-4e1f-8388-3a68c52f0afb",
+      "id": "REPLACE_ME",
       "name": "A1 Validator",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
@@ -345,7 +340,7 @@
         "model": "deepseek/deepseek-v4-flash",
         "options": {}
       },
-      "id": "3ac8df1c-5947-4fa6-baa1-48103994d48d",
+      "id": "REPLACE_ME",
       "name": "Groq Chat Model",
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
       "typeVersion": 1,
@@ -353,12 +348,7 @@
         752,
         384
       ],
-      "credentials": {
-        "openRouterApi": {
-          "id": "C2KZObZVYqVFb2t8",
-          "name": "OpenRouter account 2"
-        }
-      }
+      "credentials": {}
     },
     {
       "parameters": {
@@ -371,7 +361,7 @@
           },
           "conditions": [
             {
-              "id": "89527613-da88-47b2-ac95-519de7c5cdb5",
+              "id": "REPLACE_ME",
               "leftValue": "={{ $json.output }}",
               "rightValue": "VALIDATED",
               "operator": {
@@ -384,7 +374,7 @@
         },
         "options": {}
       },
-      "id": "4f80e606-d972-432d-9083-54e9f9b75479",
+      "id": "REPLACE_ME",
       "name": "If",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -404,7 +394,7 @@
           },
           "conditions": [
             {
-              "id": "5a39f475-6395-4176-82bf-f3cdd721a3c9",
+              "id": "REPLACE_ME",
               "leftValue": "={{ $('Append or update row in sheet').item.json.body.data.fields[10].value[0].url }}",
               "rightValue": "",
               "operator": {
@@ -418,7 +408,7 @@
         },
         "options": {}
       },
-      "id": "d65d5e0f-822f-4068-a74e-b374d2de9843",
+      "id": "REPLACE_ME",
       "name": "If1",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -438,7 +428,7 @@
           }
         }
       },
-      "id": "0171aabe-0b07-42e7-aa68-99e4765bf0eb",
+      "id": "REPLACE_ME",
       "name": "HTTP Request",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
@@ -454,7 +444,7 @@
         "operation": "pdf",
         "options": {}
       },
-      "id": "44b3656d-7c74-4777-bbd9-a04d5ba3f1bb",
+      "id": "REPLACE_ME",
       "name": "Extract from File",
       "type": "n8n-nodes-base.extractFromFile",
       "typeVersion": 1.1,
@@ -472,7 +462,7 @@
           "systemMessage": "You are an academic document analyst. You have been given a departmental project guideline document (PDF or DOCX).\n\nYour task is to read the entire document using the Extract from File tool and extract ALL formatting and structural rules into a structured JSON output.\n\nExtract the following categories:\n1. chapter_arrangement: The required order of chapters and sections\n2. headings: Numbering style, heading format requirements\n3. formatting: margins, fonts, font sizes, line spacing, paragraph spacing\n4. page_order: Order of preliminary pages\n5. reference_style: Citation format (APA, Harvard, Vancouver, etc.)\n6. tables_and_figures: Requirements for table/figure numbering and captioning\n7. university_specific: Any unique requirements specific to this institution\n\nOutput ONLY valid JSON. No commentary, no explanations.\n\nIf a rule is not mentioned in the document, set that field to null (meaning the default will be used).\n\nIMPORTANT: This guideline becomes the HIGHEST AUTHORITY. Any rules found here override the default formatting."
         }
       },
-      "id": "0ef1efc6-10a7-45f7-b6ad-79330fc16045",
+      "id": "REPLACE_ME",
       "name": "A2 Analyzer",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
@@ -486,7 +476,7 @@
         "model": "openrouter/free",
         "options": {}
       },
-      "id": "1daf18db-4b34-4828-afe2-66ad6f87b107",
+      "id": "REPLACE_ME",
       "name": "Groq Chat Model1",
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
       "typeVersion": 1,
@@ -494,19 +484,14 @@
         2000,
         32
       ],
-      "credentials": {
-        "openRouterApi": {
-          "id": "C2KZObZVYqVFb2t8",
-          "name": "OpenRouter account 2"
-        }
-      }
+      "credentials": {}
     },
     {
       "parameters": {
         "assignments": {
           "assignments": [
             {
-              "id": "bf1de9c7-db8e-4072-94ec-c92435cc2dc6",
+              "id": "REPLACE_ME",
               "name": "rules",
               "value": "{   \"font\": \"Times New Roman\",   \"fontSize\": \"12pt\",   \"pageSize\": \"A4\",   \"citationStyle\": \"APA 7th Edition\",   \"lineSpacing_prelim\": 1.5,   \"lineSpacing_chapters\": 2.0,   \"alignment\": \"Justified\",   \"headingStyle\": \"Word Heading Styles\",   \"referenceFormat\": \"Hanging indentation, alphabetical\" }",
               "type": "string"
@@ -515,7 +500,7 @@
         },
         "options": {}
       },
-      "id": "5c4332a7-d202-40a4-934b-280992d7db51",
+      "id": "REPLACE_ME",
       "name": "Edit Fields1",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
@@ -532,14 +517,14 @@
           "value": "1ApADwFiobcQU2oQ6k8Qy6bCb-9gC6RQkhiwkB-dAya4",
           "mode": "list",
           "cachedResultName": "Thesis Requests",
-          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ApADwFiobcQU2oQ6k8Qy6bCb-9gC6RQkhiwkB-dAya4/edit?usp=drivesdk"
+          "cachedResultUrl": "REPLACE_WITH_YOUR_RESOURCE"
         },
         "sheetName": {
           "__rl": true,
           "value": "gid=0",
           "mode": "list",
           "cachedResultName": "Thesis Requests",
-          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ApADwFiobcQU2oQ6k8Qy6bCb-9gC6RQkhiwkB-dAya4/edit#gid=0"
+          "cachedResultUrl": "REPLACE_WITH_YOUR_RESOURCE"
         },
         "columns": {
           "mappingMode": "defineBelow",
@@ -564,7 +549,7 @@
           ],
           "schema": [
             {
-              "id": "submission_id",
+              "id": "REPLACE_ME",
               "displayName": "submission_id",
               "required": false,
               "defaultMatch": false,
@@ -584,7 +569,7 @@
               "removed": false
             },
             {
-              "id": "student_name",
+              "id": "REPLACE_ME",
               "displayName": "student_name",
               "required": false,
               "defaultMatch": false,
@@ -594,7 +579,7 @@
               "removed": false
             },
             {
-              "id": "reg_number",
+              "id": "REPLACE_ME",
               "displayName": "reg_number",
               "required": false,
               "defaultMatch": false,
@@ -604,7 +589,7 @@
               "removed": false
             },
             {
-              "id": "project_title",
+              "id": "REPLACE_ME",
               "displayName": "project_title",
               "required": false,
               "defaultMatch": false,
@@ -634,7 +619,7 @@
               "removed": false
             },
             {
-              "id": "institution",
+              "id": "REPLACE_ME",
               "displayName": "institution",
               "required": false,
               "defaultMatch": false,
@@ -644,7 +629,7 @@
               "removed": false
             },
             {
-              "id": "supervisor",
+              "id": "REPLACE_ME",
               "displayName": "supervisor",
               "required": false,
               "defaultMatch": false,
@@ -664,7 +649,7 @@
               "removed": false
             },
             {
-              "id": "study_location",
+              "id": "REPLACE_ME",
               "displayName": "study_location",
               "required": false,
               "defaultMatch": false,
@@ -674,7 +659,7 @@
               "removed": false
             },
             {
-              "id": "study_duration",
+              "id": "REPLACE_ME",
               "displayName": "study_duration",
               "required": false,
               "defaultMatch": false,
@@ -684,7 +669,7 @@
               "removed": false
             },
             {
-              "id": "guideline_uploaded",
+              "id": "REPLACE_ME",
               "displayName": "guideline_uploaded",
               "required": false,
               "defaultMatch": false,
@@ -704,7 +689,7 @@
               "removed": false
             },
             {
-              "id": "output_link",
+              "id": "REPLACE_ME",
               "displayName": "output_link",
               "required": false,
               "defaultMatch": false,
@@ -714,7 +699,7 @@
               "removed": false
             },
             {
-              "id": "row_number",
+              "id": "REPLACE_ME",
               "displayName": "row_number",
               "required": false,
               "defaultMatch": false,
@@ -730,7 +715,7 @@
         },
         "options": {}
       },
-      "id": "a52b3e66-3874-466f-b83a-fc37155659da",
+      "id": "REPLACE_ME",
       "name": "Update row in sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
@@ -738,12 +723,7 @@
         1248,
         384
       ],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "DqsmQixiaB0zxcVS",
-          "name": "Google Sheets account"
-        }
-      }
+      "credentials": {}
     },
     {
       "parameters": {
@@ -751,7 +731,7 @@
         "responseBody": "={{ $('If').item.json.output }}",
         "options": {}
       },
-      "id": "53288bbc-8b45-4c14-a750-3a2cd7b99ac1",
+      "id": "REPLACE_ME",
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -762,7 +742,7 @@
     },
     {
       "parameters": {},
-      "id": "f4f26335-92b4-49bc-9a1f-588719023960",
+      "id": "REPLACE_ME",
       "name": "Merge",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
@@ -773,9 +753,9 @@
     },
     {
       "parameters": {
-        "jsCode": "// Code node: \"Final Assembler\"\n\n// HTML → plain text converter\nfunction stripHtml(str) {\n  if (!str) return '';\n  return str\n    .replace(/<div[^>]*style=\"page-break-after[^\"]*\"[^>]*><\\/div>/gi, '\\n---\\n')\n    .replace(/<br\\s*\\/?>/gi, '\\n')\n    .replace(/<\\/p>/gi, '\\n')\n    .replace(/<\\/div>/gi, '\\n')\n    .replace(/<strong>(.*?)<\\/strong>/gi, '**$1**')\n    .replace(/<em>(.*?)<\\/em>/gi, '*$1*')\n    .replace(/<[^>]+>/g, '')\n    .replace(/&nbsp;/g, ' ')\n    .replace(/&amp;/g, '&')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"')\n    .replace(/[ \\t]+/g, ' ')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .trim();\n}\n\nconst prelimPages = stripHtml($('Call Chapter 1 - 3').first().json.output_firstItem);\nconst abstractRefs = stripHtml($('Call Chapter 1 - 3').first().json.A8_Abstract__References_output_firstItem);\nconst ch1 = stripHtml($('Call Chapter 1 - 3').first().json.A3_Chapter_1_Writer_output_firstItem);\nconst ch2 = stripHtml($('Call Chapter 1 - 3').first().json.A4d_Chapter_2_Final_Assembler_output_firstItem);\nconst ch3 = stripHtml($('Call Chapter 1 - 3').first().json.A5_Chapter_3_Writer_output_firstItem);\n\nconst assembled = [\n  prelimPages,\n  abstractRefs,\n  ch1,\n  ch2,\n  ch3,\n].filter(Boolean).join('\\n\\n---\\n\\n');\n\nreturn [{ json: { assembledDocument: assembled } }];"
+        "jsCode": "// Code node: \"Final Assembler\"\n\n// HTML \u2192 plain text converter\nfunction stripHtml(str) {\n  if (!str) return '';\n  return str\n    .replace(/<div[^>]*style=\"page-break-after[^\"]*\"[^>]*><\\/div>/gi, '\\n---\\n')\n    .replace(/<br\\s*\\/?>/gi, '\\n')\n    .replace(/<\\/p>/gi, '\\n')\n    .replace(/<\\/div>/gi, '\\n')\n    .replace(/<strong>(.*?)<\\/strong>/gi, '**$1**')\n    .replace(/<em>(.*?)<\\/em>/gi, '*$1*')\n    .replace(/<[^>]+>/g, '')\n    .replace(/&nbsp;/g, ' ')\n    .replace(/&amp;/g, '&')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"')\n    .replace(/[ \\t]+/g, ' ')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .trim();\n}\n\nconst prelimPages = stripHtml($('Call Chapter 1 - 3').first().json.output_firstItem);\nconst abstractRefs = stripHtml($('Call Chapter 1 - 3').first().json.A8_Abstract__References_output_firstItem);\nconst ch1 = stripHtml($('Call Chapter 1 - 3').first().json.A3_Chapter_1_Writer_output_firstItem);\nconst ch2 = stripHtml($('Call Chapter 1 - 3').first().json.A4d_Chapter_2_Final_Assembler_output_firstItem);\nconst ch3 = stripHtml($('Call Chapter 1 - 3').first().json.A5_Chapter_3_Writer_output_firstItem);\n\nconst assembled = [\n  prelimPages,\n  abstractRefs,\n  ch1,\n  ch2,\n  ch3,\n].filter(Boolean).join('\\n\\n---\\n\\n');\n\nreturn [{ json: { assembledDocument: assembled } }];"
       },
-      "id": "01f69209-aece-4ef5-a6a5-72e2cdb60d65",
+      "id": "REPLACE_ME",
       "name": "Final Assembler",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -786,7 +766,7 @@
     },
     {
       "parameters": {
-        "sendTo": "brutsalmighty@gmail.com",
+        "sendTo": "student@example.com",
         "subject": "Your Thesis Document - MA Workflow",
         "message": "<p>Dear Student,</p><p>Your thesis document (Chapters 1-3) has been generated successfully by the MA Workflow system.</p><p>Please find the attached .docx file containing your complete thesis draft with preliminary pages, abstract, chapters, and references formatted in APA 7th edition.</p><p>Best regards,<br>MA Thesis Generator</p>",
         "options": {
@@ -797,7 +777,7 @@
           }
         }
       },
-      "id": "28b090dd-8428-4165-8313-4caf62c347a8",
+      "id": "REPLACE_ME",
       "name": "Send a message",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.2,
@@ -805,13 +785,8 @@
         3168,
         64
       ],
-      "webhookId": "a869fbee-5eb6-43b7-95b4-2f4d66438206",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "7nSgEgjjlVOGjoLw",
-          "name": "Gmail account"
-        }
-      }
+      "webhookId": "REPLACE_ME",
+      "credentials": {}
     },
     {
       "parameters": {
@@ -839,7 +814,7 @@
           ],
           "schema": [
             {
-              "id": "submission_id",
+              "id": "REPLACE_ME",
               "displayName": "submission_id",
               "required": false,
               "defaultMatch": false,
@@ -859,7 +834,7 @@
               "removed": false
             },
             {
-              "id": "student_name",
+              "id": "REPLACE_ME",
               "displayName": "student_name",
               "required": false,
               "defaultMatch": false,
@@ -869,7 +844,7 @@
               "removed": false
             },
             {
-              "id": "reg_number",
+              "id": "REPLACE_ME",
               "displayName": "reg_number",
               "required": false,
               "defaultMatch": false,
@@ -879,7 +854,7 @@
               "removed": false
             },
             {
-              "id": "project_title",
+              "id": "REPLACE_ME",
               "displayName": "project_title",
               "required": false,
               "defaultMatch": false,
@@ -909,7 +884,7 @@
               "removed": false
             },
             {
-              "id": "institution",
+              "id": "REPLACE_ME",
               "displayName": "institution",
               "required": false,
               "defaultMatch": false,
@@ -919,7 +894,7 @@
               "removed": false
             },
             {
-              "id": "supervisor",
+              "id": "REPLACE_ME",
               "displayName": "supervisor",
               "required": false,
               "defaultMatch": false,
@@ -939,7 +914,7 @@
               "removed": false
             },
             {
-              "id": "study_location",
+              "id": "REPLACE_ME",
               "displayName": "study_location",
               "required": false,
               "defaultMatch": false,
@@ -949,7 +924,7 @@
               "removed": false
             },
             {
-              "id": "study_duration",
+              "id": "REPLACE_ME",
               "displayName": "study_duration",
               "required": false,
               "defaultMatch": false,
@@ -959,7 +934,7 @@
               "removed": false
             },
             {
-              "id": "guideline_uploaded",
+              "id": "REPLACE_ME",
               "displayName": "guideline_uploaded",
               "required": false,
               "defaultMatch": false,
@@ -978,7 +953,7 @@
               "canBeUsedToMatch": true
             },
             {
-              "id": "output_link",
+              "id": "REPLACE_ME",
               "displayName": "output_link",
               "required": false,
               "defaultMatch": false,
@@ -993,7 +968,7 @@
         },
         "options": {}
       },
-      "id": "10799ed9-6def-43dc-b498-96591cc23543",
+      "id": "REPLACE_ME",
       "name": "Update Sheet - Complete",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
@@ -1002,12 +977,7 @@
         64
       ],
       "alwaysOutputData": true,
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "DqsmQixiaB0zxcVS",
-          "name": "Google Sheets account"
-        }
-      }
+      "credentials": {}
     },
     {
       "parameters": {
@@ -1017,7 +987,7 @@
           "responseCode": 200
         }
       },
-      "id": "97dabd1c-e585-4c2e-9c51-a48a4aa1fa55",
+      "id": "REPLACE_ME",
       "name": "Respond - Success",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
@@ -1036,7 +1006,7 @@
         2944,
         64
       ],
-      "id": "7a9db592-e76a-4806-b91e-fff81c41ff92",
+      "id": "REPLACE_ME",
       "name": "Generate DOCX"
     },
     {
@@ -1071,7 +1041,7 @@
               "removed": false
             },
             {
-              "id": "submission_id",
+              "id": "REPLACE_ME",
               "displayName": "submission_id",
               "required": false,
               "defaultMatch": false,
@@ -1080,7 +1050,7 @@
               "removed": false
             },
             {
-              "id": "output_slice",
+              "id": "REPLACE_ME",
               "displayName": "output_slice",
               "required": false,
               "defaultMatch": false,
@@ -1101,7 +1071,7 @@
         64
       ],
       "name": "Call Chapter 1 - 3",
-      "id": "6e18d7df-f7e0-45d8-bcff-595a83b7fc7c"
+      "id": "REPLACE_ME"
     }
   ],
   "pinData": {},
@@ -1344,18 +1314,18 @@
     "saveExecutionProgress": true,
     "callerPolicy": "workflowsFromSameOwner"
   },
-  "versionId": "8780c088-f0e8-4e31-a163-9c1dd9030da5",
+  "versionId": "REPLACE_ME",
   "meta": {
     "templateCredsSetupCompleted": true,
-    "instanceId": "4b69bfb177681df01afc9bb98954a3140566bcbe1701d9935c209e6c2aaf0544"
+    "instanceId": "REPLACE_ME"
   },
   "nodeGroups": [],
-  "id": "7Sc69chvnTcIaLzX",
+  "id": "REPLACE_ME",
   "tags": [
     {
       "updatedAt": "2026-07-26T17:24:41.717Z",
       "createdAt": "2026-07-26T17:24:41.717Z",
-      "id": "azNJDtKgKEhrIG5S",
+      "id": "REPLACE_ME",
       "name": "Thesis Writer"
     }
   ]
