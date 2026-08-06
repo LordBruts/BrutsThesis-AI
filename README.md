@@ -135,6 +135,22 @@ The generated proposal should always undergo human review before submission.
 
 ---
 
+## Repository Contents
+
+This repository demonstrates the overall architecture and implementation of the Medical Thesis Proposal Writer.
+
+To protect proprietary work, the following components are intentionally omitted or sanitized:
+
+- AI system prompts
+- Prompt engineering logic
+- API credentials
+- Sensitive workflow configuration
+- Proprietary templates
+
+The repository is intended to showcase the application's architecture, workflow design, and implementation approach.
+
+---
+
 ## License
 
 This project is licensed under the MIT License.
