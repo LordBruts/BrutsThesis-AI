@@ -1,6 +1,14 @@
 # Bruts-Thesis AI
 
-An AI-powered workflow that automates the generation of medical thesis proposals (Chapters 1–3) using n8n and Large Language Models.
+> AI-powered workflow for automating medical thesis proposal generation (Chapters 1–3).
+
+Built with:
+
+- n8n
+- OpenRouter
+- Tally Forms
+- Gmail
+- Google Sheet
 
 The workflow collects project information through a Tally form, retrieves relevant academic literature, generates a structured proposal, delivers the proposal as a Microsoft Word document via email, and records the submission status in Google Sheets.
 
