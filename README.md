@@ -104,20 +104,105 @@ Designed primarily for:
 
 ---
 
-## Project Status
+## Repository Contents
 
-🚧 In Development
+This repository demonstrates the overall architecture and implementation of the Medical Thesis Proposal Writer.
 
-Current progress:
+To protect proprietary work, the following components are intentionally omitted or sanitized:
 
-- Core workflow implemented
-- Proposal generation functional
-- DOCX generation implemented
-- Gmail delivery implemented
-- Google Sheets logging implemented
+- AI system prompts
+- Prompt engineering logic
+- API credentials
+- Sensitive workflow configuration
+- Proprietary templates
 
-Remaining work includes testing, refinement, documentation, and production hardening.
+The repository is intended to showcase the application's architecture, workflow design, and implementation approach.
 
+---
+
+# Roadmap
+
+This roadmap outlines the planned evolution of the Medical Thesis Proposal Writer.
+
+---
+
+## Version 1.0 — Initial Release (Current)
+
+### Core Features
+- ✅ Tally form integration
+- ✅ Automated workflow using n8n
+- ✅ AI-powered proposal generation (Chapters 1–3)
+- ✅ Literature retrieval
+- ✅ Microsoft Word (.docx) generation
+- ✅ Gmail delivery
+- ✅ Google Sheets logging
+- ✅ End-to-end automated workflow
+
+---
+
+## Version 1.1 — Stability & Reliability
+
+### Improvements
+- ⬜ Comprehensive error handling
+- ⬜ Automatic retry mechanism
+- ⬜ Duplicate submission detection
+- ⬜ Better input validation
+- ⬜ Improved DOCX formatting
+- ⬜ Workflow performance optimization
+- ⬜ Enhanced logging and monitoring
+
+---
+
+## Version 1.2 — Better Proposal Quality
+
+### AI Improvements
+- ⬜ Improved literature retrieval
+- ⬜ Better prompt engineering
+- ⬜ Multiple proposal templates
+- ⬜ Citation consistency checks
+- ⬜ Proposal quality scoring
+- ⬜ Formatting improvements based on university guidelines
+
+---
+
+## Version 1.3 — User Experience
+
+### Productivity Features
+- ⬜ Email progress notifications
+- ⬜ Request status tracking
+- ⬜ Estimated completion time
+- ⬜ Configurable proposal templates
+- ⬜ Support for multiple institutions
+- ⬜ Export to PDF
+
+---
+
+## Version 2.0 — Complete Thesis Assistant
+
+### Major Features
+- ⬜ Chapter 4 generation
+- ⬜ Chapter 5 generation
+- ⬜ Reference management
+- ⬜ Supervisor feedback integration
+- ⬜ Revision workflow
+- ⬜ Literature database
+- ⬜ Project dashboard
+- ⬜ User authentication
+
+---
+
+## Future Ideas
+
+The following features are under consideration.
+
+- ⬜ Multi-language support
+- ⬜ Plagiarism checking integration
+- ⬜ Grammar and style review
+- ⬜ Institutional template library
+- ⬜ AI-powered proposal critique
+- ⬜ Research topic recommendation
+- ⬜ Mobile-friendly dashboard
+- ⬜ API for third-party integrations
 ---
 
 ## Disclaimer
@@ -132,22 +217,6 @@ Users are responsible for:
 - ensuring academic integrity
 
 The generated proposal should always undergo human review before submission.
-
----
-
-## Repository Contents
-
-This repository demonstrates the overall architecture and implementation of the Medical Thesis Proposal Writer.
-
-To protect proprietary work, the following components are intentionally omitted or sanitized:
-
-- AI system prompts
-- Prompt engineering logic
-- API credentials
-- Sensitive workflow configuration
-- Proprietary templates
-
-The repository is intended to showcase the application's architecture, workflow design, and implementation approach.
 
 ---
 
