@@ -1,0 +1,1660 @@
+{
+  "name": "PPW · Intake & Delivery",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "PPW",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "c045f8f3-a5c9-4edf-ac7d-4171113c7a22"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gid=0"
+        },
+        "event": "rowAdded",
+        "options": {}
+      },
+      "name": "Sheet Trigger",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node: \"Normalize Submission\"\n// MODE: Run Once for All Items   LANGUAGE: JavaScript\n//\n// Replaces BOTH the old \"Edit Fields\" node and the \"A1 Validator\" agent.\n//\n// The old Edit Fields read fields[N].value and wrote a field NAMED\n// fields[N].label, which destroyed every value in the payload -- the defect that\n// made the entire workflow route every submission to \"Missing Fields\".\n//\n// The old validator was an LLM asked to check that eight fields were non-empty,\n// with the result detected by testing whether its prose contained the word\n// \"VALIDATED\". That false-passes whenever the model writes \"VALIDATED\" while\n// explaining what is missing. Required-field checking is deterministic, so it\n// is done here in code: no tokens, no ambiguity, no false pass.\n//\n// Fields are matched BY LABEL, not by position, so reordering the form no\n// longer silently shifts every column.\n\n// Accepts BOTH intake shapes, because the same form reaches n8n two ways:\n//\n//   1. Tally webhook  -> body.data.fields[] = [{ label, type, value, options }]\n//   2. Google Sheets  -> a flat row whose COLUMN HEADERS are the question labels\n//\n// Tally's sheet columns are the question labels, and the matcher below is\n// label-based, so one MAP serves both. The sheet route matters because it needs\n// no inbound connectivity: n8n polls Google outbound, so it works from\n// localhost with no tunnel.\nconst item = $input.first().json || {};\nconst body = item.body || {};\nconst data = body.data || {};\nconst isWebhook = Array.isArray(data.fields);\n\n// Sheet columns Tally or n8n own, which are not questions and must not be\n// reported as unmatched form labels.\nconst META_COLUMNS = /^(row_number|submission[ _]?id|respondent[ _]?id|form[ _]?id|form[ _]?name|submitted[ _]?at|created[ _]?at|timestamp|status|output[ _]?link|citation[ _]?count|unverified[ _]?count|notes)$/i;\n\n// -> [{ label, field }] where field is a Tally field object or a { value } shim\nconst entries = isWebhook\n  ? data.fields\n      .filter(Boolean)\n      .map((f) => ({ label: String(f.label || f.key || f.title || ''), field: f }))\n  : Object.keys(item)\n      .filter((k) => !META_COLUMNS.test(k))\n      .map((k) => ({ label: k, field: { value: item[k] } }));\n\n// The Sheets Trigger supplies row_number, which is the only reliable key for\n// updating the row Tally just wrote. On the webhook path there is no row yet.\nconst row_number = isWebhook ? '' : item.row_number === undefined ? '' : item.row_number;\n\n// label pattern -> canonical name. First match wins, so ORDER IS LOAD-BEARING:\n// the most specific labels must be tested first. \"Head of Department\" and\n// \"Departmental Project Guideline\" both contain the word \"department\", so both\n// have to be matched before any pattern that looks for a department/programme.\n// Getting this order wrong silently drops fields, which is the same class of\n// failure as the original workflow's label/value swap.\nconst MAP = [\n  ['guideline_url',   /guideline|departmental\\s*(project\\s*)?(guide|format|template)|upload|attachment|\\bfile\\b/i],\n  ['student_email',   /e-?mail/i],\n  ['hod',             /\\bhod\\b|head\\s*of\\s*(the\\s*)?depart/i],\n  ['supervisor',      /supervisor/i],\n  ['reg_number',      /reg(istration)?[^a-z]*(number|no)\\b|matric|admission\\s*number|student\\s*(id|number)/i],\n  ['student_name',    /(student|your|full|candidate)[^a-z]*name|^name$/i],\n  ['project_title',   /(project|research|study|thesis|dissertation)\\s*(title|topic)|^title$/i],\n  ['faculty',         /faculty|\\bcollege\\b|school\\s*of/i],\n  ['institution',     /institution|university|polytechnic/i],\n  ['programme',       /programme|\\bprogram\\b|course\\s*of\\s*study|^department\\b/i],\n  ['study_location',  /(study|research)\\s*(location|site|setting|area)|^location/i],\n  ['study_duration',  /(study|research|project)\\s*duration|^duration|time\\s*frame|timeline/i],\n];\n\nconst REQUIRED = [\n  ['project_title',  'Project Title'],\n  ['programme',      'Programme of Study'],\n  ['faculty',        'Faculty'],\n  ['institution',    'Institution'],\n  ['student_name',   'Student Full Name'],\n  ['reg_number',     'Registration/Matriculation Number'],\n  ['supervisor',     \"Supervisor's Name\"],\n  ['hod',            'Head of Department (HOD) Name'],\n];\n\n// Reduce any Tally field value to a trimmed string.\n//\n// The trap: for DROPDOWN, MULTIPLE_CHOICE, CHECKBOXES and RANKING, Tally does\n// NOT send the chosen text. It sends an array of option UUIDs, and a separate\n// `options` array mapping id -> text:\n//\n//   { type: \"DROPDOWN\", value: [\"e7bfbbc6-c2e6-...\"],\n//     options: [{ id: \"e7bfbbc6-c2e6-...\", text: \"Medical Radiography\" }] }\n//\n// Taking `value` at face value writes a UUID into the thesis. Resolve it.\n// FILE_UPLOAD instead sends an array of objects carrying `url`.\nfunction toValue(f) {\n  const v = f ? f.value : null;\n  if (v === null || v === undefined) return '';\n\n  const opts = f && Array.isArray(f.options) ? f.options : null;\n  const resolve = (x) => {\n    if (opts) {\n      const hit = opts.find((o) => o && o.id === x);\n      if (hit) return String(hit.text === undefined ? '' : hit.text).trim();\n    }\n    // Not an option id (free-text \"Other\", or a plain value) — keep as-is.\n    return String(x).trim();\n  };\n\n  if (Array.isArray(v)) {\n    if (!v.length) return '';\n    if (typeof v[0] === 'object' && v[0] !== null) {\n      // file upload / signature: take the first attachment's URL\n      return String(v[0].url || v[0].value || v[0].label || v[0].name || '').trim();\n    }\n    return v.map(resolve).filter(Boolean).join(', ');\n  }\n  if (typeof v === 'object') return String(v.url || v.value || v.label || '').trim();\n  return resolve(v);\n}\n\nconst out = {};\nconst unmatched = [];\n\nfor (const e of entries) {\n  const value = toValue(e.field);\n  if (!value) continue;\n  const hit = MAP.find(([, re]) => re.test(e.label));\n  if (hit) {\n    if (!out[hit[0]]) out[hit[0]] = value;   // first non-empty match wins\n  } else {\n    unmatched.push(e.label);\n  }\n}\n\nconst missing_required = REQUIRED.filter(([k]) => !out[k]).map(([, human]) => human);\n\n// A guideline value only counts if it is actually a fetchable URL.\nconst guideline_url = /^https?:\\/\\//i.test(out.guideline_url || '') ? out.guideline_url : '';\n\n// The form asks for \"Programme of Study\" and prompts with \"e.g. Bachelor of\n// Radiography\", so students type a DEGREE, not a department. The document needs\n// both, in different places:\n//\n//   cover page  -> \"DEPARTMENT OF RADIOGRAPHY\"\n//   title page  -> \"...FOR THE AWARD OF BACHELOR OF RADIOGRAPHY\"\n//\n// Blindly prefixing gives \"Bachelor of Science in Bachelor of Radiography\", and\n// using the raw value as a department gives \"DEPARTMENT OF BACHELOR OF\n// RADIOGRAPHY\". Derive the two separately.\n// The trailing \"(of|in)\" must be allowed independently of \"of science\",\n// otherwise \"Bachelor of Radiography\" strips only \"Bachelor\" and leaves\n// \"of Radiography\" as the department name.\nconst DEGREE_LEAD =\n  /^\\s*(b\\.?\\s?sc\\.?|m\\.?\\s?sc\\.?|b\\.?a\\.?|m\\.?a\\.?|ph\\.?\\s?d\\.?|b\\.?[a-z]{2,4}\\.?|bachelor(\\s+of\\s+science)?(\\s+(of|in))?|master(\\s+of\\s+science)?(\\s+(of|in))?|doctor(\\s+of\\s+philosophy)?(\\s+(of|in))?|degree\\s+in)\\s+/i;\n\nconst LOOKS_LIKE_DEGREE =\n  /^\\s*(b\\.?\\s?sc|m\\.?\\s?sc|b\\.?a\\b|m\\.?a\\b|ph\\.?\\s?d|b\\.?[a-z]{2,4}\\b|bachelor|master|doctor)/i;\n\nconst programme = out.programme || '';\n// Department: strip any leading degree phrase. \"Bachelor of Radiography\" ->\n// \"Radiography\"; \"Medical Radiography\" is left alone.\nconst stripped = programme.replace(DEGREE_LEAD, '').trim();\nconst department = stripped || programme;\n// Degree: already a degree title? use it verbatim. Otherwise name one.\nconst degree = !programme\n  ? ''\n  : LOOKS_LIKE_DEGREE.test(programme)\n  ? programme\n  : 'Bachelor of Science in ' + programme;\n\nconst now = new Date();\nconst monthYear =\n  ['January','February','March','April','May','June','July','August','September','October','November','December'][now.getMonth()] +\n  ' ' + now.getFullYear();\n\nreturn [\n  {\n    json: {\n      trigger_source: isWebhook ? 'webhook' : 'sheet',\n      row_number,\n      submission_id: String(\n        data.submissionId || data.responseId || data.id ||\n        item['Submission ID'] || item.submission_id ||\n        (row_number !== '' ? 'row-' + row_number : '')\n      ),\n      created_at: String(\n        data.createdAt || item['Submitted at'] || item.timestamp || now.toISOString()\n      ),\n      project_title: out.project_title || '',\n      programme: out.programme || '',\n      faculty: out.faculty || '',\n      institution: out.institution || '',\n      student_name: out.student_name || '',\n      reg_number: out.reg_number || '',\n      supervisor: out.supervisor || '',\n      hod: out.hod || '',\n      study_location: out.study_location || '',\n      study_duration: out.study_duration || '',\n      student_email: out.student_email || '',\n      guideline_url,\n      guideline_uploaded: guideline_url ? 'Yes' : 'No',\n      department,\n      degree,\n      month_year: monthYear,\n      missing_required,\n      is_valid: missing_required.length === 0,\n      unmatched_form_labels: unmatched,\n    },\n  },\n];\n"
+      },
+      "name": "Normalize Submission",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "valid-1",
+              "leftValue": "={{ $json.is_valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Submission Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('Normalize Submission').item.json.row_number }}",
+            "submission_id": "={{ $json.submission_id }}",
+            "timestamp": "={{ $json.created_at }}",
+            "student_name": "={{ $json.student_name }}",
+            "reg_number": "={{ $json.reg_number }}",
+            "project_title": "={{ $json.project_title }}",
+            "programme": "={{ $json.programme }}",
+            "faculty": "={{ $json.faculty }}",
+            "institution": "={{ $json.institution }}",
+            "supervisor": "={{ $json.supervisor }}",
+            "hod": "={{ $json.hod }}",
+            "student_email": "={{ $json.student_email }}",
+            "guideline_uploaded": "={{ $json.guideline_uploaded }}",
+            "status": "Incomplete",
+            "notes": "=Missing: {{ $json.missing_required.join(\", \") }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "submission_id",
+              "displayName": "submission_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "student_name",
+              "displayName": "student_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reg_number",
+              "displayName": "reg_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "project_title",
+              "displayName": "project_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "programme",
+              "displayName": "programme",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "faculty",
+              "displayName": "faculty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "institution",
+              "displayName": "institution",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "supervisor",
+              "displayName": "supervisor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "hod",
+              "displayName": "hod",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "study_location",
+              "displayName": "study_location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "study_duration",
+              "displayName": "study_duration",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "student_email",
+              "displayName": "student_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "guideline_uploaded",
+              "displayName": "guideline_uploaded",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "output_link",
+              "displayName": "output_link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "citation_count",
+              "displayName": "citation_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "unverified_count",
+              "displayName": "unverified_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "name": "Sheet · Mark Incomplete",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        660,
+        480
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: \"incomplete\", message: \"Some required fields are missing. Please resubmit with them completed.\", missing: $('Normalize Submission').item.json.missing_required }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "name": "Respond 400 Incomplete",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        880,
+        480
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('Normalize Submission').item.json.row_number }}",
+            "submission_id": "={{ $json.submission_id }}",
+            "timestamp": "={{ $json.created_at }}",
+            "student_name": "={{ $json.student_name }}",
+            "reg_number": "={{ $json.reg_number }}",
+            "project_title": "={{ $json.project_title }}",
+            "programme": "={{ $json.programme }}",
+            "faculty": "={{ $json.faculty }}",
+            "institution": "={{ $json.institution }}",
+            "supervisor": "={{ $json.supervisor }}",
+            "hod": "={{ $json.hod }}",
+            "study_location": "={{ $json.study_location }}",
+            "study_duration": "={{ $json.study_duration }}",
+            "student_email": "={{ $json.student_email }}",
+            "guideline_uploaded": "={{ $json.guideline_uploaded }}",
+            "status": "Received",
+            "output_link": "",
+            "notes": ""
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "submission_id",
+              "displayName": "submission_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "student_name",
+              "displayName": "student_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reg_number",
+              "displayName": "reg_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "project_title",
+              "displayName": "project_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "programme",
+              "displayName": "programme",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "faculty",
+              "displayName": "faculty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "institution",
+              "displayName": "institution",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "supervisor",
+              "displayName": "supervisor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "hod",
+              "displayName": "hod",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "study_location",
+              "displayName": "study_location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "study_duration",
+              "displayName": "study_duration",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "student_email",
+              "displayName": "student_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "guideline_uploaded",
+              "displayName": "guideline_uploaded",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "output_link",
+              "displayName": "output_link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "citation_count",
+              "displayName": "citation_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "unverified_count",
+              "displayName": "unverified_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "name": "Sheet · Record Submission",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        660,
+        120
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// n8n Code node: \"Clear Sheet Error\"\n// MODE: Run Once for All Items   LANGUAGE: JavaScript\n//\n// Sheet writes are bookkeeping, not the deliverable, so \"Sheet · Record\n// Submission\" runs with onError: continueRegularOutput -- a spreadsheet problem\n// must not cost the student their thesis.\n//\n// The catch is that n8n does not simply carry on. The item that node emits has\n// the failure attached to it (json.error plus an item-level error object), and\n// n8n forwards an already-flagged item straight to the ERROR output of the next\n// node that has one. Observed on execution 147: the sheet write failed on\n// missing columns, and \"Download Guideline\" then fetched the PDF perfectly --\n// 2.29 MB of real binary -- yet still reported on its error branch, because the\n// item was condemned before it ever arrived.\n//\n// Rebuilding the item from the normalizer discards both the flag and the\n// wreckage of the json, so a failed write stays where it happened and is\n// recorded, instead of derailing every node downstream of it.\nconst clean = $('Normalize Submission').first().json;\nconst incoming = $input.first().json || {};\nconst err = incoming.error;\n\nreturn [\n  {\n    json: {\n      ...clean,\n      // '' when the write succeeded. Surfaced so the run can report a partial\n      // success later rather than claiming the sheet is up to date.\n      sheet_write_error: err ? String(err.message || err) : '',\n    },\n    // Single item, and downstream nodes resolve $('Normalize Submission').item\n    // through the paired-item chain -- breaking it here would break them.\n    pairedItem: { item: 0 },\n  },\n];\n"
+      },
+      "name": "Clear Sheet Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: \"accepted\", submission_id: $('Normalize Submission').item.json.submission_id, message: \"Submission received. Your thesis proposal is being generated and will be emailed to you when it is ready.\" }) }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "name": "Respond 202 Accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        880,
+        120
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "guide-1",
+              "leftValue": "={{ $('Normalize Submission').item.json.guideline_url }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Has Guideline?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1100,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Normalize Submission').item.json.guideline_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "name": "Download Guideline",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1320,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "data",
+        "options": {}
+      },
+      "name": "Extract Guideline Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        1540,
+        0
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "model": "deepseek/deepseek-v4-flash",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "name": "Model · Guideline",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        1760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Extract the formatting rules from this departmental project guideline.\n\n{{ $json.text.slice(0, 24000) }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You extract document-formatting rules from a university departmental project guideline.\n\nReturn ONLY rules the document explicitly states. If the document does not mention a setting, return null for it so the system default is kept. Never guess a value, and never copy the example values from this instruction.\n\nUnits: fontSizePt in points; line spacing as a number (1, 1.5, 2); margins in inches (convert from cm by dividing by 2.54); pageSize as A4 or Letter."
+        }
+      },
+      "name": "A2 Guideline Analyzer",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1760,
+        0
+      ],
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 2
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "autoFix": true,
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"font\": {\n      \"type\": [\n        \"string\",\n        \"null\"\n      ]\n    },\n    \"fontSizePt\": {\n      \"type\": [\n        \"number\",\n        \"null\"\n      ]\n    },\n    \"pageSize\": {\n      \"type\": [\n        \"string\",\n        \"null\"\n      ]\n    },\n    \"lineSpacingPrelim\": {\n      \"type\": [\n        \"number\",\n        \"null\"\n      ]\n    },\n    \"lineSpacingChapters\": {\n      \"type\": [\n        \"number\",\n        \"null\"\n      ]\n    },\n    \"citationStyle\": {\n      \"type\": [\n        \"string\",\n        \"null\"\n      ]\n    },\n    \"alignment\": {\n      \"type\": [\n        \"string\",\n        \"null\"\n      ]\n    },\n    \"marginsInches\": {\n      \"type\": [\n        \"object\",\n        \"null\"\n      ],\n      \"properties\": {\n        \"top\": {\n          \"type\": [\n            \"number\",\n            \"null\"\n          ]\n        },\n        \"right\": {\n          \"type\": [\n            \"number\",\n            \"null\"\n          ]\n        },\n        \"bottom\": {\n          \"type\": [\n            \"number\",\n            \"null\"\n          ]\n        },\n        \"left\": {\n          \"type\": [\n            \"number\",\n            \"null\"\n          ]\n        }\n      }\n    }\n  },\n  \"required\": []\n}"
+      },
+      "name": "Guideline Schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node: \"Normalize Format Rules\"\n// MODE: Run Once for All Items   LANGUAGE: JavaScript\n//\n// Produces the format_rules object that drives the DOCX styles.\n//\n// In the original workflow the guideline was downloaded, parsed and analysed --\n// and then thrown away: the analyzer fed a Merge node whose output nothing read,\n// and the sub-workflow call forwarded only the validator's prose. This node is\n// the convergence point that makes the guideline actually reach the document.\n//\n// It is reached from three paths, and must behave sensibly on all of them:\n//   1. guideline analysed successfully  -> guideline values override defaults\n//   2. no guideline supplied            -> defaults\n//   3. download / extract / analysis failed -> defaults, with the reason recorded\n//\n// Anything the guideline does not state keeps its default. A guideline that\n// mentions only a font must not silently reset the margins.\n\nconst DEFAULTS = {\n  font: 'Times New Roman',\n  fontSizePt: 12,\n  pageSize: 'A4',\n  lineSpacingPrelim: 1.5,\n  lineSpacingChapters: 2.0,\n  citationStyle: 'APA 7th Edition',\n  alignment: 'justified',\n  marginsInches: { top: 1, right: 1, bottom: 1, left: 1.5 },\n};\n\nconst input = $input.first().json || {};\n\n// The analyzer's structured output arrives under `output`; an error branch\n// arrives with an `error` key and no rules at all.\nconst parsed = input.output && typeof input.output === 'object' ? input.output : null;\nconst errored = !!input.error;\n\nconst rules = JSON.parse(JSON.stringify(DEFAULTS));\nconst overrides = [];\n\nfunction take(key, value, coerce) {\n  if (value === null || value === undefined || value === '') return;\n  const v = coerce ? coerce(value) : value;\n  if (v === null || v === undefined || (typeof v === 'number' && !isFinite(v))) return;\n  if (JSON.stringify(rules[key]) === JSON.stringify(v)) return;\n  rules[key] = v;\n  overrides.push(key);\n}\n\nconst num = (v) => {\n  const n = parseFloat(String(v).replace(/[^0-9.]/g, ''));\n  return isFinite(n) ? n : null;\n};\n\nif (parsed) {\n  take('font', parsed.font);\n  take('fontSizePt', parsed.fontSizePt, num);\n  take('pageSize', parsed.pageSize, (v) => String(v).toUpperCase());\n  take('lineSpacingPrelim', parsed.lineSpacingPrelim, num);\n  take('lineSpacingChapters', parsed.lineSpacingChapters, num);\n  take('citationStyle', parsed.citationStyle);\n  take('alignment', parsed.alignment, (v) => String(v).toLowerCase());\n\n  const m = parsed.marginsInches;\n  if (m && typeof m === 'object') {\n    const merged = Object.assign({}, DEFAULTS.marginsInches);\n    let changed = false;\n    for (const side of ['top', 'right', 'bottom', 'left']) {\n      const v = num(m[side]);\n      // sanity-bound: a \"margin\" of 0 or 9 inches is a parse artefact, not a rule\n      if (v !== null && v >= 0.25 && v <= 3 && v !== merged[side]) { merged[side] = v; changed = true; }\n    }\n    if (changed) { rules.marginsInches = merged; overrides.push('marginsInches'); }\n  }\n}\n\n// Guard the values the document generator divides and multiplies by.\nif (!(rules.fontSizePt >= 8 && rules.fontSizePt <= 16)) rules.fontSizePt = DEFAULTS.fontSizePt;\nif (!(rules.lineSpacingChapters >= 1 && rules.lineSpacingChapters <= 3)) rules.lineSpacingChapters = DEFAULTS.lineSpacingChapters;\nif (!(rules.lineSpacingPrelim >= 1 && rules.lineSpacingPrelim <= 3)) rules.lineSpacingPrelim = DEFAULTS.lineSpacingPrelim;\n\nconst sub = $('Normalize Submission').first().json;\n\nreturn [\n  {\n    json: {\n      submission_id: sub.submission_id,\n      project_title: sub.project_title,\n      programme: sub.programme,\n      faculty: sub.faculty,\n      institution: sub.institution,\n      student_name: sub.student_name,\n      reg_number: sub.reg_number,\n      supervisor: sub.supervisor,\n      hod: sub.hod,\n      study_location: sub.study_location,\n      study_duration: sub.study_duration,\n      student_email: sub.student_email,\n      department: sub.department,\n      degree: sub.degree,\n      month_year: sub.month_year,\n      format_rules: rules,\n      guideline_status: parsed\n        ? 'applied (' + (overrides.length ? overrides.join(', ') : 'no differences from default') + ')'\n        : errored\n        ? 'defaults used - guideline processing failed: ' + String(input.error).slice(0, 200)\n        : 'defaults used - no guideline supplied',\n    },\n  },\n];\n"
+      },
+      "name": "Normalize Format Rules",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "YOUR_THESIS_CHAPTERS_WORKFLOW_ID",
+          "cachedResultName": "PPW · Thesis Chapters 1-3"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "submission_id": "={{ $json.submission_id }}",
+            "project_title": "={{ $json.project_title }}",
+            "programme": "={{ $json.programme }}",
+            "faculty": "={{ $json.faculty }}",
+            "institution": "={{ $json.institution }}",
+            "student_name": "={{ $json.student_name }}",
+            "reg_number": "={{ $json.reg_number }}",
+            "supervisor": "={{ $json.supervisor }}",
+            "hod": "={{ $json.hod }}",
+            "study_location": "={{ $json.study_location }}",
+            "study_duration": "={{ $json.study_duration }}",
+            "format_rules": "={{ $json.format_rules }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "name": "Call Thesis Chapters",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        2420,
+        120
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node: \"Assemble Document Input\"\n// MODE: Run Once for All Items   LANGUAGE: JavaScript\n//\n// Joins the sub-workflow's chapters to the submission metadata and format rules,\n// producing the single object the DOCX generator consumes.\n//\n// Keeping this join explicit is what lets docx-generator.js be unit-tested\n// offline against a plain object (see ../ppw-thesis-chapters/test/).\n\nconst thesis = $input.first().json || {};\nconst ctx = $('Normalize Format Rules').first().json || {};\n\nconst report = thesis.citation_report || {};\nconst violations = report.violations || [];\n\nreturn [\n  {\n    json: {\n      meta: {\n        project_title: ctx.project_title,\n        programme: ctx.programme,\n        faculty: ctx.faculty,\n        institution: ctx.institution,\n        student_name: ctx.student_name,\n        reg_number: ctx.reg_number,\n        supervisor: ctx.supervisor,\n        hod: ctx.hod,\n        department: ctx.department,\n        degree: ctx.degree,\n        month_year: ctx.month_year,\n      },\n      format_rules: ctx.format_rules,\n      ch1: thesis.ch1,\n      ch2: thesis.ch2,\n      ch3: thesis.ch3,\n      abstract: thesis.abstract,\n      references: thesis.references,\n\n      // carried through for the sheet, so a run with citation problems is\n      // visible rather than silently shipped\n      submission_id: ctx.submission_id,\n      student_email: ctx.student_email,\n      guideline_status: ctx.guideline_status,\n      citation_count: report.unique_refs_cited || 0,\n      unverified_count: violations.length,\n      citation_violations: violations\n        .map((v) => v.type + (v.ref_id ? ' ' + v.ref_id : '') + ' in ' + v.chapter)\n        .join('; ')\n        .slice(0, 480),\n      evidence_stats: thesis.evidence_stats || {},\n    },\n  },\n];\n"
+      },
+      "name": "Assemble Document Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node: \"Generate DOCX\"\n// MODE: Run Once for All Items   LANGUAGE: JavaScript\n// Zero imports. Builds a valid .docx (OOXML inside a STORE-mode zip) by hand.\n//\n// Rewritten from the original in three ways that matter:\n//\n//  1. It consumes NAMED FIELDS. The original concatenated everything into one\n//     blob and then regex-hunted for \"# CHAPTER ONE\" -- a header no prompt ever\n//     emitted -- so Chapter One was silently dropped from every document.\n//  2. Preliminary pages are BUILT FROM DATA, not generated by a model. Cover,\n//     title, certification, approval, ToC, lists and abbreviations are pure\n//     substitution or extraction, so there is nothing to parse and nothing to\n//     hallucinate. The original's hardcoded fallback cover page -- which stamped\n//     one specific IVU thesis title onto any document whose parse missed -- is\n//     gone, along with the agent that made it necessary.\n//  3. format_rules from the departmental guideline actually drive the styles.\n//     Previously they were computed and then discarded.\n\n// ------------------------------------------------------------------ input ----\nconst src = $input.first().json;\n\nconst meta = src.meta || {};\nconst rules = src.format_rules || {};\nconst ch = { ch1: src.ch1 || '', ch2: src.ch2 || '', ch3: src.ch3 || '' };\nconst abstractText = src.abstract || '';\nconst references = Array.isArray(src.references) ? src.references : [];\n\nconst FONT = rules.font || 'Times New Roman';\nconst SZ = Math.round((parseFloat(rules.fontSizePt) || 12) * 2); // half-points\nconst LINE_BODY = Math.round((parseFloat(rules.lineSpacingChapters) || 2.0) * 240);\nconst LINE_PRE = Math.round((parseFloat(rules.lineSpacingPrelim) || 1.5) * 240);\nconst MARGIN = (function () {\n  const m = rules.marginsInches || {};\n  const tw = (v, d) => Math.round((parseFloat(v) || d) * 1440);\n  return { top: tw(m.top, 1), right: tw(m.right, 1), bottom: tw(m.bottom, 1), left: tw(m.left, 1.5) };\n})();\nconst PAGE =\n  String(rules.pageSize || 'A4').toUpperCase() === 'LETTER'\n    ? { w: 12240, h: 15840 }\n    : { w: 11906, h: 16838 };\n\n// ------------------------------------------------------------------ CRC32 ----\nfunction crc32(buf) {\n  let table = crc32.t;\n  if (!table) {\n    table = crc32.t = new Uint32Array(256);\n    for (let i = 0; i < 256; i++) {\n      let c = i;\n      for (let j = 0; j < 8; j++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;\n      table[i] = c;\n    }\n  }\n  let crc = 0xffffffff;\n  for (let i = 0; i < buf.length; i++) crc = table[(crc ^ buf[i]) & 0xff] ^ (crc >>> 8);\n  return (crc ^ 0xffffffff) >>> 0;\n}\n\n// -------------------------------------------------------------- ZIP (STORE) ----\nfunction createZip(files) {\n  const entries = [];\n  const local = [];\n  let offset = 0;\n  for (const f of files) {\n    const nameB = Buffer.from(f.name, 'utf-8');\n    const data = Buffer.from(f.content, 'utf-8');\n    const crc = crc32(data);\n    const lh = Buffer.alloc(30 + nameB.length);\n    lh.writeUInt32LE(0x04034b50, 0);\n    lh.writeUInt16LE(20, 4);\n    lh.writeUInt32LE(crc, 14);\n    lh.writeUInt32LE(data.length, 18);\n    lh.writeUInt32LE(data.length, 22);\n    lh.writeUInt16LE(nameB.length, 26);\n    nameB.copy(lh, 30);\n    entries.push({ nameB: nameB, data: data, crc: crc, offset: offset });\n    local.push(Buffer.concat([lh, data]));\n    offset += lh.length + data.length;\n  }\n  const cd = entries.map((e) => {\n    const b = Buffer.alloc(46 + e.nameB.length);\n    b.writeUInt32LE(0x02014b50, 0);\n    b.writeUInt16LE(20, 4);\n    b.writeUInt16LE(20, 6);\n    b.writeUInt32LE(e.crc, 16);\n    b.writeUInt32LE(e.data.length, 20);\n    b.writeUInt32LE(e.data.length, 24);\n    b.writeUInt16LE(e.nameB.length, 28);\n    b.writeUInt32LE(e.offset, 42);\n    e.nameB.copy(b, 46);\n    return b;\n  });\n  const cdBuf = Buffer.concat(cd);\n  const eocd = Buffer.alloc(22);\n  eocd.writeUInt32LE(0x06054b50, 0);\n  eocd.writeUInt16LE(entries.length, 8);\n  eocd.writeUInt16LE(entries.length, 10);\n  eocd.writeUInt32LE(cdBuf.length, 12);\n  eocd.writeUInt32LE(offset, 16);\n  return Buffer.concat(local.concat([cdBuf, eocd]));\n}\n\n// ------------------------------------------------------------- XML helpers ----\nfunction esc(s) {\n  return String(s)\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;')\n    .replace(/\"/g, '&quot;')\n    // control characters would make Word reject the part outright\n    .replace(/[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f]/g, '');\n}\n\n// **bold** and *italic* become real runs; the reference list relies on this\n// for italic journal titles and volumes.\nfunction makeRuns(text, forceBold) {\n  let runs = '';\n  const parts = String(text).split(/(\\*\\*[^*]+\\*\\*|\\*[^*]+\\*)/g);\n  for (const part of parts) {\n    if (!part) continue;\n    const isBold = part.startsWith('**') && part.endsWith('**') && part.length > 4;\n    const isItal = !isBold && part.startsWith('*') && part.endsWith('*') && part.length > 2;\n    if (isBold) {\n      runs +=\n        '<w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space=\"preserve\">' +\n        esc(part.slice(2, -2)) +\n        '</w:t></w:r>';\n    } else if (isItal) {\n      runs +=\n        '<w:r><w:rPr><w:i/><w:iCs/></w:rPr><w:t xml:space=\"preserve\">' +\n        esc(part.slice(1, -1)) +\n        '</w:t></w:r>';\n    } else {\n      runs +=\n        '<w:r>' +\n        (forceBold ? '<w:rPr><w:b/><w:bCs/></w:rPr>' : '') +\n        '<w:t xml:space=\"preserve\">' +\n        esc(part) +\n        '</w:t></w:r>';\n    }\n  }\n  return runs;\n}\n\nfunction wp(text, o) {\n  o = o || {};\n  let p = '';\n  if (o.heading) p += '<w:pStyle w:val=\"' + o.heading + '\"/>';\n  const jc = o.center ? 'center' : o.left ? 'left' : 'both';\n  p += '<w:jc w:val=\"' + jc + '\"/>';\n  p +=\n    '<w:spacing w:line=\"' +\n    (o.line || LINE_BODY) +\n    '\" w:lineRule=\"auto\" w:before=\"0\" w:after=\"' +\n    (o.after != null ? o.after : 120) +\n    '\"/>';\n  if (o.pageBreak) p += '<w:pageBreakBefore/>';\n  if (o.hangIndent) p += '<w:ind w:left=\"720\" w:hanging=\"720\"/>';\n  if (o.bullet) p += '<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr>';\n  return '<w:p><w:pPr>' + p + '</w:pPr>' + (text ? makeRuns(text, o.bold) : '') + '</w:p>';\n}\n\nconst blank = (n, o) => Array.from({ length: n }, () => wp('', o)).join('');\n\n// --------------------------------------------------- markdown -> paragraphs ----\nfunction renderBody(text, opts) {\n  opts = opts || {};\n  const line = opts.line || LINE_BODY;\n  let xml = '';\n  let buf = '';\n  const flush = () => {\n    if (buf.trim()) xml += wp(buf.trim(), { line: line });\n    buf = '';\n  };\n  for (const rawLine of String(text).split('\\n')) {\n    const t = rawLine.trim();\n    if (!t || t === '---' || t === '***') {\n      flush();\n      continue;\n    }\n    const h = t.match(/^(#{1,4})\\s+(.*)$/);\n    if (h) {\n      flush();\n      const depth = h[1].length;\n      const style = depth === 1 ? 'Heading1' : depth === 2 ? 'Heading2' : 'Heading3';\n      xml += wp(h[2], {\n        bold: true,\n        heading: style,\n        center: depth === 1,\n        left: depth > 1,\n        line: line,\n      });\n      continue;\n    }\n    // \"3.1 RESEARCH DESIGN\" / \"3.9.1 Validity\" written without a hash\n    const numbered = t.match(/^(\\d+\\.\\d+(\\.\\d+)?)\\s+(\\S.*)$/);\n    if (numbered && numbered[3].length < 90) {\n      flush();\n      xml += wp(t, {\n        bold: true,\n        heading: numbered[2] ? 'Heading3' : 'Heading2',\n        left: true,\n        line: line,\n      });\n      continue;\n    }\n    if (/^[-*•]\\s+/.test(t)) {\n      flush();\n      xml += wp(t.replace(/^[-*•]\\s+/, ''), { bullet: true, line: line });\n      continue;\n    }\n    if (t.startsWith('|')) {\n      flush();\n      continue;\n    }\n    buf = buf ? buf + ' ' + t : t;\n  }\n  flush();\n  return xml;\n}\n\n// ------------------------------------------------------------- extraction ----\nconst ALL_CHAPTERS = [ch.ch1, ch.ch2, ch.ch3].join('\\n');\n\nfunction extractCaptions(kind) {\n  const re = new RegExp('\\\\b' + kind + '\\\\s+(\\\\d+\\\\.\\\\d+)\\\\s*[:.\\\\u2013-]\\\\s*([^\\\\n]{3,140})', 'gi');\n  const out = [];\n  const seen = {};\n  let m;\n  while ((m = re.exec(ALL_CHAPTERS)) !== null) {\n    const num = m[1];\n    if (seen[num]) continue;\n    seen[num] = true;\n    out.push({\n      num: num,\n      caption: m[2].replace(/\\*/g, '').replace(/\\s+/g, ' ').trim().replace(/[.\\s]+$/, ''),\n    });\n  }\n  return out.sort((a, b) => a.num.localeCompare(b.num, undefined, { numeric: true }));\n}\n\n// \"Computed Tomography (CT)\" -> CT. The initials of the expansion must line up\n// with the abbreviation, which keeps ordinary parentheses out of the list.\nfunction extractAbbreviations() {\n  const re = /([A-Z][A-Za-z]+(?:[\\s-][A-Za-z]+){0,5})\\s*\\(([A-Z][A-Z0-9]{1,7})\\)/g;\n  const map = {};\n  const order = [];\n  let m;\n  while ((m = re.exec(ALL_CHAPTERS)) !== null) {\n    const term = m[1].replace(/\\s+/g, ' ').trim();\n    const abbr = m[2];\n    const initials = term\n      .split(/[\\s-]+/)\n      .map((w) => w[0])\n      .join('')\n      .toUpperCase();\n    if (!map[abbr] && initials.length >= 2 && abbr[0] === initials[0]) {\n      map[abbr] = term;\n      order.push(abbr);\n    }\n  }\n  return order.sort().map((a) => [a, map[a]]);\n}\n\n// -------------------------------------------------------- preliminary pages ----\nconst up = (s) => String(s || '').toUpperCase();\nconst M = {\n  title: up(meta.project_title),\n  programme: up(meta.programme),\n  department: up(meta.department || meta.programme),\n  faculty: up(meta.faculty),\n  institution: up(meta.institution),\n  student: up(meta.student_name),\n  reg: meta.reg_number || '',\n  supervisor: meta.supervisor || '',\n  hod: meta.hod || '',\n  degree: up(meta.degree || meta.programme),\n  date: up(meta.month_year),\n};\n\nconst PRE = { line: LINE_PRE, after: 0 };\nconst H1 = (t, brk) =>\n  wp(t, { bold: true, center: true, heading: 'Heading1', pageBreak: !!brk, line: LINE_PRE, after: 200 });\nconst C = (t) => wp(t, { center: true, bold: true, line: LINE_PRE, after: 0 });\n\nlet sec1 = '';\n\n// Cover page\nsec1 += blank(3, PRE);\nsec1 += C(M.title);\nsec1 += blank(3, PRE);\nsec1 += C('DEPARTMENT OF ' + M.department);\nsec1 += C(M.faculty);\nsec1 += C(M.institution);\nsec1 += blank(4, PRE);\nsec1 += C(M.date);\n\n// Title page\nsec1 += wp('', { pageBreak: true, line: LINE_PRE, after: 0 });\nsec1 += blank(2, PRE);\nsec1 += C(M.title);\nsec1 += blank(2, PRE);\nsec1 += C('BY');\nsec1 += C(M.student);\nsec1 += C(M.reg);\nsec1 += blank(2, PRE);\nsec1 += C('A RESEARCH PROJECT SUBMITTED TO THE');\nsec1 += C('DEPARTMENT OF ' + M.department + ',');\nsec1 += C(M.faculty + ',');\nsec1 += C(M.institution);\nsec1 += blank(1, PRE);\nsec1 += C('IN PARTIAL FULFILMENT OF THE REQUIREMENTS FOR THE AWARD OF');\nsec1 += C(M.degree);\nsec1 += blank(2, PRE);\nif (M.supervisor) sec1 += C('SUPERVISOR: ' + up(M.supervisor));\nsec1 += blank(2, PRE);\nsec1 += C(M.date);\n\nconst sigBlock = (role) =>\n  wp('____________________________\\t\\t____________________', { left: true, line: LINE_PRE }) +\n  wp(role + '\\t\\t\\t\\tDate', { left: true, line: LINE_PRE }) +\n  blank(1, PRE);\n\n// Certification\nsec1 += H1('CERTIFICATION', true);\nsec1 += wp(\n  'This is to certify that this research project titled “' +\n    (meta.project_title || '') +\n    '” was carried out by ' +\n    (meta.student_name || '') +\n    ' with registration number ' +\n    M.reg +\n    ' of the Department of ' +\n    (meta.department || meta.programme || '') +\n    ', ' +\n    (meta.faculty || '') +\n    ', ' +\n    (meta.institution || '') +\n    ', under my supervision, in partial fulfilment of the requirements for the award of ' +\n    (meta.degree || meta.programme || '') +\n    '.',\n  { line: LINE_PRE }\n);\nsec1 += blank(2, PRE);\nsec1 += sigBlock(M.supervisor || 'Supervisor');\nsec1 += sigBlock(M.hod || 'Head of Department');\n\n// Approval\nsec1 += H1('APPROVAL PAGE', true);\nsec1 += wp(\n  'This research project has been read and approved as meeting the requirements of the Department of ' +\n    (meta.department || meta.programme || '') +\n    ', ' +\n    (meta.faculty || '') +\n    ', ' +\n    (meta.institution || '') +\n    '.',\n  { line: LINE_PRE }\n);\nsec1 += blank(2, PRE);\nsec1 += sigBlock(M.supervisor || 'Supervisor');\nsec1 += sigBlock(M.hod || 'Head of Department');\nsec1 += sigBlock('External Examiner');\n\n// Dedication / Acknowledgement\nsec1 += H1('DEDICATION', true);\nsec1 += wp('[This page is reserved for the student’s personal dedication.]', { line: LINE_PRE });\n\nsec1 += H1('ACKNOWLEDGEMENT', true);\nsec1 += wp(\n  'My sincere gratitude goes to Almighty God for His guidance throughout this work. ' +\n    'I am deeply grateful to my supervisor' +\n    (M.supervisor ? ', ' + M.supervisor + ',' : '') +\n    ' for the patience, direction and constructive criticism that shaped this project. ' +\n    'I also thank the Head of Department' +\n    (M.hod ? ', ' + M.hod + ',' : '') +\n    ' and the entire academic and non-academic staff of the Department of ' +\n    (meta.department || meta.programme || '') +\n    ' for their support. Finally, I thank my family, friends and colleagues for their encouragement. ' +\n    '[The student may personalise this page.]',\n  { line: LINE_PRE }\n);\n\n// Table of contents: a real Word TOC field, refreshed on open via updateFields.\nsec1 += H1('TABLE OF CONTENTS', true);\nsec1 +=\n  '<w:p><w:pPr><w:spacing w:line=\"' +\n  LINE_PRE +\n  '\" w:lineRule=\"auto\"/></w:pPr>' +\n  '<w:r><w:fldChar w:fldCharType=\"begin\"/></w:r>' +\n  '<w:r><w:instrText xml:space=\"preserve\"> TOC \\\\o \"1-3\" \\\\h \\\\z \\\\u </w:instrText></w:r>' +\n  '<w:r><w:fldChar w:fldCharType=\"separate\"/></w:r>' +\n  '<w:r><w:t>Right-click and choose “Update Field” to build the table of contents.</w:t></w:r>' +\n  '<w:r><w:fldChar w:fldCharType=\"end\"/></w:r></w:p>';\n\n// Lists of tables / figures / abbreviations\nconst tables = extractCaptions('Table');\nsec1 += H1('LIST OF TABLES', true);\nsec1 += tables.length\n  ? tables.map((t) => wp('Table ' + t.num + ':\\t' + t.caption, { left: true, line: LINE_PRE })).join('')\n  : wp('No tables appear in this document.', { left: true, line: LINE_PRE });\n\nconst figures = extractCaptions('Figure');\nsec1 += H1('LIST OF FIGURES', true);\nsec1 += figures.length\n  ? figures.map((f) => wp('Figure ' + f.num + ':\\t' + f.caption, { left: true, line: LINE_PRE })).join('')\n  : wp('No figures appear in this document.', { left: true, line: LINE_PRE });\n\nconst abbrs = extractAbbreviations();\nsec1 += H1('LIST OF ABBREVIATIONS', true);\nsec1 += abbrs.length\n  ? abbrs.map((p) => wp(p[0] + '\\t\\t' + p[1], { left: true, line: LINE_PRE })).join('')\n  : wp('No abbreviations appear in this document.', { left: true, line: LINE_PRE });\n\n// Abstract\nsec1 += H1('ABSTRACT', true);\nsec1 += renderBody(abstractText, { line: LINE_PRE });\n\n// -------------------------------------------------------- chapters + refs ----\nlet sec2 = '';\nconst CHAPTERS = [\n  { n: 'CHAPTER ONE', t: 'INTRODUCTION', body: ch.ch1, brk: false },\n  { n: 'CHAPTER TWO', t: 'LITERATURE REVIEW', body: ch.ch2, brk: true },\n  { n: 'CHAPTER THREE', t: 'METHODOLOGY', body: ch.ch3, brk: true },\n];\nfor (const c of CHAPTERS) {\n  if (!c.body || !c.body.trim()) continue;\n  sec2 += wp(c.n, { bold: true, center: true, heading: 'Heading1', pageBreak: c.brk, after: 0 });\n  sec2 += wp(c.t, { bold: true, center: true, after: 240 });\n  // Drop a chapter banner the writer may have repeated at the top of its own text.\n  const cleaned = c.body.replace(\n    new RegExp('^\\\\s*#{0,3}\\\\s*(' + c.n + '|' + c.t + ')\\\\s*:?\\\\s*\\\\n+', 'gi'),\n    ''\n  );\n  sec2 += renderBody(cleaned);\n}\n\nsec2 += wp('REFERENCES', { bold: true, center: true, heading: 'Heading1', pageBreak: true, after: 240 });\nsec2 += references.length\n  ? references.map((r) => wp(r, { hangIndent: true, left: true, after: 120 })).join('')\n  : wp('No references were verified for this document.', { left: true });\n\n// ------------------------------------------------------------- OOXML parts ----\nconst W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';\nconst R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';\nconst P = 'http://schemas.openxmlformats.org/package/2006/relationships';\nconst CT = 'http://schemas.openxmlformats.org/package/2006/content-types';\nconst MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml';\n\nconst contentTypes =\n  '<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Types xmlns=\"' +\n  CT +\n  '\">' +\n  '<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>' +\n  '<Default Extension=\"xml\" ContentType=\"application/xml\"/>' +\n  '<Override PartName=\"/word/document.xml\" ContentType=\"' + MIME + '.document.main+xml\"/>' +\n  '<Override PartName=\"/word/styles.xml\" ContentType=\"' + MIME + '.styles+xml\"/>' +\n  '<Override PartName=\"/word/settings.xml\" ContentType=\"' + MIME + '.settings+xml\"/>' +\n  '<Override PartName=\"/word/numbering.xml\" ContentType=\"' + MIME + '.numbering+xml\"/>' +\n  '<Override PartName=\"/word/footer1.xml\" ContentType=\"' + MIME + '.footer+xml\"/>' +\n  '<Override PartName=\"/word/footer2.xml\" ContentType=\"' + MIME + '.footer+xml\"/>' +\n  '</Types>';\n\nconst rootRels =\n  '<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"' +\n  P +\n  '\">' +\n  '<Relationship Id=\"rId1\" Type=\"' + R + '/officeDocument\" Target=\"word/document.xml\"/></Relationships>';\n\nconst docRels =\n  '<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"' +\n  P +\n  '\">' +\n  '<Relationship Id=\"rId1\" Type=\"' + R + '/styles\" Target=\"styles.xml\"/>' +\n  '<Relationship Id=\"rId2\" Type=\"' + R + '/settings\" Target=\"settings.xml\"/>' +\n  '<Relationship Id=\"rId3\" Type=\"' + R + '/numbering\" Target=\"numbering.xml\"/>' +\n  '<Relationship Id=\"rId4\" Type=\"' + R + '/footer\" Target=\"footer1.xml\"/>' +\n  '<Relationship Id=\"rId5\" Type=\"' + R + '/footer\" Target=\"footer2.xml\"/></Relationships>';\n\nconst footer =\n  '<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:ftr xmlns:w=\"' +\n  W +\n  '\">' +\n  '<w:p><w:pPr><w:jc w:val=\"center\"/></w:pPr>' +\n  '<w:r><w:fldChar w:fldCharType=\"begin\"/></w:r>' +\n  '<w:r><w:instrText xml:space=\"preserve\"> PAGE </w:instrText></w:r>' +\n  '<w:r><w:fldChar w:fldCharType=\"separate\"/></w:r>' +\n  '<w:r><w:t>1</w:t></w:r>' +\n  '<w:r><w:fldChar w:fldCharType=\"end\"/></w:r></w:p></w:ftr>';\n\nconst numbering =\n  '<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:numbering xmlns:w=\"' +\n  W +\n  '\">' +\n  '<w:abstractNum w:abstractNumId=\"0\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/>' +\n  '<w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"•\"/><w:lvlJc w:val=\"left\"/>' +\n  '<w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>' +\n  '<w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num></w:numbering>';\n\nconst headingStyle = (id, name, lvl, before, after, jc) =>\n  '<w:style w:type=\"paragraph\" w:styleId=\"' + id + '\"><w:name w:val=\"' + name + '\"/>' +\n  '<w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:qFormat/>' +\n  '<w:pPr><w:keepNext/><w:spacing w:before=\"' + before + '\" w:after=\"' + after + '\"/>' +\n  '<w:jc w:val=\"' + jc + '\"/><w:outlineLvl w:val=\"' + lvl + '\"/></w:pPr>' +\n  '<w:rPr><w:b/><w:bCs/></w:rPr></w:style>';\n\nconst styles =\n  '<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:styles xmlns:w=\"' +\n  W +\n  '\">' +\n  '<w:docDefaults><w:rPrDefault><w:rPr>' +\n  '<w:rFonts w:ascii=\"' + FONT + '\" w:eastAsia=\"' + FONT + '\" w:hAnsi=\"' + FONT + '\" w:cs=\"' + FONT + '\"/>' +\n  '<w:sz w:val=\"' + SZ + '\"/><w:szCs w:val=\"' + SZ + '\"/><w:color w:val=\"000000\"/>' +\n  '</w:rPr></w:rPrDefault><w:pPrDefault><w:pPr>' +\n  '<w:spacing w:after=\"120\" w:line=\"' + LINE_BODY + '\" w:lineRule=\"auto\"/>' +\n  '<w:jc w:val=\"both\"/></w:pPr></w:pPrDefault></w:docDefaults>' +\n  '<w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/><w:qFormat/></w:style>' +\n  headingStyle('Heading1', 'heading 1', '0', '240', '200', 'center') +\n  headingStyle('Heading2', 'heading 2', '1', '200', '160', 'left') +\n  headingStyle('Heading3', 'heading 3', '2', '160', '120', 'left') +\n  '</w:styles>';\n\nconst settings =\n  '<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:settings xmlns:w=\"' +\n  W +\n  '\">' +\n  '<w:updateFields w:val=\"true\"/><w:defaultTabStop w:val=\"720\"/></w:settings>';\n\nconst pgMar =\n  '<w:pgMar w:top=\"' + MARGIN.top + '\" w:right=\"' + MARGIN.right +\n  '\" w:bottom=\"' + MARGIN.bottom + '\" w:left=\"' + MARGIN.left +\n  '\" w:header=\"708\" w:footer=\"708\" w:gutter=\"0\"/>';\nconst pgSz = '<w:pgSz w:w=\"' + PAGE.w + '\" w:h=\"' + PAGE.h + '\"/>';\n\nconst documentXml =\n  '<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>' +\n  '<w:document xmlns:w=\"' + W + '\" xmlns:r=\"' + R + '\"><w:body>' +\n  sec1 +\n  // Section 1 closes here: roman numerals, cover page unnumbered.\n  '<w:p><w:pPr><w:sectPr>' +\n  '<w:footerReference w:type=\"default\" r:id=\"rId4\"/>' + pgSz + pgMar +\n  '<w:pgNumType w:fmt=\"lowerRoman\" w:start=\"1\"/><w:titlePg/>' +\n  '</w:sectPr></w:pPr></w:p>' +\n  sec2 +\n  // Section 2: arabic numerals, restarting at 1.\n  '<w:sectPr><w:footerReference w:type=\"default\" r:id=\"rId5\"/>' + pgSz + pgMar +\n  '<w:pgNumType w:fmt=\"decimal\" w:start=\"1\"/></w:sectPr>' +\n  '</w:body></w:document>';\n\n// ------------------------------------------------------------------ output ----\nconst zip = createZip([\n  { name: '[Content_Types].xml', content: contentTypes },\n  { name: '_rels/.rels', content: rootRels },\n  { name: 'word/_rels/document.xml.rels', content: docRels },\n  { name: 'word/document.xml', content: documentXml },\n  { name: 'word/styles.xml', content: styles },\n  { name: 'word/settings.xml', content: settings },\n  { name: 'word/numbering.xml', content: numbering },\n  { name: 'word/footer1.xml', content: footer },\n  { name: 'word/footer2.xml', content: footer },\n]);\n\nconst safe = String(meta.student_name || 'Thesis').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');\nconst filename = safe + '_Thesis_Proposal.docx';\n\nreturn [\n  {\n    json: {\n      filename: filename,\n      size_bytes: zip.length,\n      tables_listed: tables.length,\n      figures_listed: figures.length,\n      abbreviations_listed: abbrs.length,\n      references_rendered: references.length,\n    },\n    binary: {\n      data: {\n        data: zip.toString('base64'),\n        mimeType: MIME + '.document',\n        fileName: filename,\n        fileExtension: 'docx',\n      },\n    },\n  },\n];\n"
+      },
+      "name": "Generate DOCX",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "inputDataFieldName": "data",
+        "name": "={{ $json.filename }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "root",
+          "cachedResultName": "/ (Root folder)"
+        },
+        "options": {}
+      },
+      "name": "Drive · Upload Thesis",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        3080,
+        120
+      ],
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 2
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('Normalize Submission').item.json.row_number }}",
+            "submission_id": "={{ $('Assemble Document Input').item.json.submission_id }}",
+            "status": "Completed",
+            "output_link": "=https://drive.google.com/file/d/{{ $json.id }}/view",
+            "citation_count": "={{ $('Assemble Document Input').item.json.citation_count }}",
+            "unverified_count": "={{ $('Assemble Document Input').item.json.unverified_count }}",
+            "notes": "={{ $('Assemble Document Input').item.json.unverified_count > 0 ? \"CITATION ISSUES: \" + $('Assemble Document Input').item.json.citation_violations : $('Assemble Document Input').item.json.guideline_status }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "submission_id",
+              "displayName": "submission_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "student_name",
+              "displayName": "student_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reg_number",
+              "displayName": "reg_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "project_title",
+              "displayName": "project_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "programme",
+              "displayName": "programme",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "faculty",
+              "displayName": "faculty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "institution",
+              "displayName": "institution",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "supervisor",
+              "displayName": "supervisor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "hod",
+              "displayName": "hod",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "study_location",
+              "displayName": "study_location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "study_duration",
+              "displayName": "study_duration",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "student_email",
+              "displayName": "student_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "guideline_uploaded",
+              "displayName": "guideline_uploaded",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "output_link",
+              "displayName": "output_link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "citation_count",
+              "displayName": "citation_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "unverified_count",
+              "displayName": "unverified_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "name": "Sheet · Mark Complete",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3300,
+        120
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Assemble Document Input').item.json.student_email }}",
+        "subject": "=Your thesis proposal — {{ $('Normalize Format Rules').item.json.project_title }}",
+        "message": "=<p>Dear {{ $('Normalize Format Rules').item.json.student_name }},</p><p>Your thesis proposal (preliminary pages, Chapters 1–3, abstract and references) is attached as a Word document.</p><p>It cites {{ $('Assemble Document Input').item.json.citation_count }} verified sources. Every reference was resolved against Europe PMC and formatted automatically, so the reference list matches the in-text citations exactly.</p><p><strong>Before you submit it:</strong> open the Table of Contents page, right-click and choose “Update Field” to build the contents list. Personalise the Dedication and Acknowledgement pages. Then read the draft critically — it is a starting point for your own work, not a finished submission.</p><p>Regards,<br>Thesis Proposal Generator</p>",
+        "options": {
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "data"
+              }
+            ]
+          }
+        }
+      },
+      "name": "Gmail · Send Thesis",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3520,
+        120
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('Normalize Submission').item.json.row_number }}",
+            "submission_id": "={{ $('Normalize Submission').item.json.submission_id }}",
+            "status": "Failed",
+            "notes": "=Generation failed: {{ JSON.stringify($json.error || $json).slice(0, 400) }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "submission_id",
+              "displayName": "submission_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "student_name",
+              "displayName": "student_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reg_number",
+              "displayName": "reg_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "project_title",
+              "displayName": "project_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "programme",
+              "displayName": "programme",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "faculty",
+              "displayName": "faculty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "institution",
+              "displayName": "institution",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "supervisor",
+              "displayName": "supervisor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "hod",
+              "displayName": "hod",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "study_location",
+              "displayName": "study_location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "study_duration",
+              "displayName": "study_duration",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "student_email",
+              "displayName": "student_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "guideline_uploaded",
+              "displayName": "guideline_uploaded",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "output_link",
+              "displayName": "output_link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "citation_count",
+              "displayName": "citation_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "unverified_count",
+              "displayName": "unverified_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "name": "Sheet · Mark Failed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3080,
+        420
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Submission",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheet Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize Submission",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Submission": {
+      "main": [
+        [
+          {
+            "node": "Submission Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Submission Valid?": {
+      "main": [
+        [
+          {
+            "node": "Sheet · Record Submission",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sheet · Mark Incomplete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheet · Mark Incomplete": {
+      "main": [
+        [
+          {
+            "node": "Respond 400 Incomplete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheet · Record Submission": {
+      "main": [
+        [
+          {
+            "node": "Clear Sheet Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear Sheet Error": {
+      "main": [
+        [
+          {
+            "node": "Respond 202 Accepted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond 202 Accepted": {
+      "main": [
+        [
+          {
+            "node": "Has Guideline?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Guideline?": {
+      "main": [
+        [
+          {
+            "node": "Download Guideline",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize Format Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Guideline": {
+      "main": [
+        [
+          {
+            "node": "Extract Guideline Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize Format Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Guideline Text": {
+      "main": [
+        [
+          {
+            "node": "A2 Guideline Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize Format Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A2 Guideline Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Normalize Format Rules",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize Format Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Model · Guideline": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "A2 Guideline Analyzer",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Guideline Schema",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guideline Schema": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "A2 Guideline Analyzer",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Format Rules": {
+      "main": [
+        [
+          {
+            "node": "Call Thesis Chapters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Thesis Chapters": {
+      "main": [
+        [
+          {
+            "node": "Assemble Document Input",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sheet · Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Document Input": {
+      "main": [
+        [
+          {
+            "node": "Generate DOCX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate DOCX": {
+      "main": [
+        [
+          {
+            "node": "Drive · Upload Thesis",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gmail · Send Thesis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Drive · Upload Thesis": {
+      "main": [
+        [
+          {
+            "node": "Sheet · Mark Complete",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sheet · Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 3600
+  }
+}
