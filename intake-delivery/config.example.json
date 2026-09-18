@@ -1,0 +1,14 @@
+{
+  "_comment": "Copy to config.local.json and fill in. config.local.json is gitignored.",
+
+  "sheetId": "YOUR_GOOGLE_SHEET_ID",
+  "sheetName": "gid=0",
+  "subWorkflowId": "YOUR_THESIS_CHAPTERS_WORKFLOW_ID",
+
+  "_credentials": "n8n credential ids are per-instance. Leave these null and attach each credential in the n8n UI after import; set them only if you script deployment against one known instance.",
+  "credentials": {
+    "header": null,
+    "gmail": null,
+    "openrouter": null
+  }
+}
