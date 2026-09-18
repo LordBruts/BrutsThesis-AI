@@ -1,233 +1,119 @@
 # Bruts-Thesis AI
 
-> AI-powered workflow for automating medical thesis proposal generation (Chapters 1–3).
+> An n8n system that drafts Chapters 1–3 of a medical thesis proposal from real literature,
+> and is built so that an invented reference is **unrepresentable** rather than merely discouraged.
 
 Built with:
 
 - n8n
-- OpenRouter
+- OpenRouter (Claude Sonnet 5 · DeepSeek)
+- Europe PMC
 - Tally Forms
+- Google Sheets
+- Google Drive
 - Gmail
-- Google Sheet
 
-The workflow collects project information through a Tally form, retrieves relevant academic literature, generates a structured proposal, delivers the proposal as a Microsoft Word document via email, and records the submission status in Google Sheets.
+A student submits their project details through a Tally form. The system validates the
+submission, records it, optionally applies a departmental formatting guideline, searches the
+literature, writes Chapters 1–3 plus an abstract against evidence it actually fetched, and
+delivers a formatted `.docx` by email.
 
----
-
-## Overview
-
-Writing a medical thesis proposal is time-consuming and repetitive. This project automates much of the drafting process, allowing students to focus on reviewing, refining, and validating the generated content instead of writing every section from scratch.
-
-The generated proposal is intended to serve as a high-quality first draft and should always be reviewed and edited by the user before submission.
+The output is a high-quality **first draft**. It is meant to be reviewed, checked and edited
+before submission.
 
 ---
 
-## Features
+## Two workflows
 
-- Collects thesis details through a Tally form
-- Automates proposal generation using AI
-- Generates Chapters 1–3
-- Retrieves relevant academic literature
-- Produces a formatted Microsoft Word document
-- Sends the proposal automatically via Gmail
-- Records submission status in Google Sheets
-- Built as a reusable n8n workflow
+| | What it does |
+|---|---|
+| [`intake-delivery/`](intake-delivery/) | Front end. Takes the Tally submission by webhook **or** by polling the sheet Tally writes into, validates it, applies the guideline, calls the writer, and delivers the document. |
+| [`thesis-chapters/`](thesis-chapters/) | The writer. A sub-workflow: gathers literature, writes the chapters, and returns them with a machine-built reference list. Not useful standalone. |
 
----
-
-## Workflow
-
-```text
-Tally Form
-      │
-      ▼
-n8n Trigger
-      │
-      ▼
-Validate User Input
-      │
-      ▼
-Retrieve Academic Literature
-      │
-      ▼
-Generate Proposal (Chapters 1–3)
-      │
-      ▼
-Format as DOCX
-      │
-      ▼
-Send via Gmail
-      │
-      ▼
-Log Submission in Google Sheets
+```
+Tally webhook  ─┐
+                ├─▶ intake-delivery ──▶ thesis-chapters ──▶ DOCX ──▶ Gmail + Drive + Sheet
+Sheet polling  ─┘                       (Execute Workflow)
 ```
 
----
-
-## Tech Stack
-
-- n8n
-- OpenRouter
-- Tally Forms
-- Gmail API
-- Google Sheets
+The sheet-polling trigger exists because the webhook needs a public URL. Polling needs no
+tunnel, which is what makes the whole system runnable from a local instance.
 
 ---
 
-## Input
+## Why v2 exists
 
-The workflow accepts project information submitted through a Tally form.
+v1 — the *Medical Thesis Proposal Writer* that this repository used to hold — had a defect no
+amount of prompt engineering could fix.
 
-Typical inputs include:
+Its `A4c Empirical Review Writer` node was instructed to report **study design, duration,
+location, sampling technique, sample size, instruments, data collection, analysis method,
+findings and conclusions** for 10–15 studies. Its only input was a source list containing
+author, year, title, journal and DOI. No abstract, no methods text, no results text ever
+entered the workflow.
 
-- Research title
-- Student information
-- Institution
-- Department
-- Study location
-- Additional project requirements
+Every one of those thirteen fields *had* to be invented. A node given no facts will produce
+fiction, and asking it more firmly not to changes nothing.
 
----
+v2 is a structural answer rather than a better prompt:
 
-## Output
+| Change | Effect |
+|---|---|
+| Evidence is **fetched deterministically**, including Methods and Results verbatim from open-access full text | The empirical review has real facts to report |
+| Writers have **no search tools and no memory** — only the evidence pack | The model cannot reach outside supplied evidence |
+| Citations are **opaque markers** resolved by a Code node; the reference list is **computed, never written** | An invented reference is unrepresentable, not merely discouraged |
 
-The workflow generates:
-
-- A Microsoft Word (.docx) thesis proposal
-- Chapters 1–3
-- Email delivery to the requester
-- Submission log stored in Google Sheets
-
----
-
-## Use Case
-
-Designed primarily for:
-
-- Medical Radiography students
-- Nursing students
-- Medical Laboratory Science students
-- Public Health students
-- Other health-related programmes
+The v1 workflow export, its screenshots and its installation guide were removed when v2 landed.
+They remain in this repository's history.
 
 ---
 
-## Repository Contents
+## Setup
 
-This repository demonstrates the overall architecture and implementation of the Medical Thesis Proposal Writer.
+Each workflow folder has its own README with the node-by-node detail. In short:
 
-To protect proprietary work, the following components are intentionally omitted or sanitized:
+```sh
+# 1. Import both workflows into n8n (Import from File)
+#    thesis-chapters/workflow.json   <- publish this one FIRST
+#    intake-delivery/workflow.json
 
-- AI system prompts
-- Prompt engineering logic
-- API credentials
-- Sensitive workflow configuration
-- Proprietary templates
+# 2. Attach credentials in the n8n UI. The exports carry none:
+#    credential ids are per-instance and cannot be moved between installations.
 
-The repository is intended to showcase the application's architecture, workflow design, and implementation approach.
+# 3. Point the front end at your sheet and your copy of the writer
+cd intake-delivery
+cp config.example.json config.local.json    # gitignored
+#   sheetId        -> the Google Sheet Tally writes into
+#   subWorkflowId  -> the id n8n gave thesis-chapters on import
+node build-workflow.js                      # writes workflow.local.json
+```
 
----
+`config.local.json` is gitignored, and a build made from it writes **`workflow.local.json`**
+rather than overwriting the committed export. That is deliberate: the committed
+`workflow.json` is built from `config.example.json`, so it carries placeholder ids and no
+credentials, and a rebuild cannot quietly stage a real Sheet id.
 
-# Roadmap
-
-This roadmap outlines the planned evolution of the Medical Thesis Proposal Writer.
-
----
-
-## Version 1.0 — Initial Release (Current)
-
-### Core Features
-- ✅ Tally form integration
-- ✅ Automated workflow using n8n
-- ✅ AI-powered proposal generation (Chapters 1–3)
-- ✅ Literature retrieval
-- ✅ Microsoft Word (.docx) generation
-- ✅ Gmail delivery
-- ✅ Google Sheets logging
-- ✅ End-to-end automated workflow
+**Publish `thesis-chapters` before activating `intake-delivery`.** n8n refuses to activate a
+workflow whose Execute Workflow nodes point at unpublished sub-workflows. Publishing the leaf
+first is safe — an Execute Workflow trigger registers no webhook and never fires on its own.
 
 ---
 
-## Version 1.1 — Stability & Reliability
+## Repository layout
 
-### Improvements
-- ⬜ Comprehensive error handling
-- ⬜ Automatic retry mechanism
-- ⬜ Duplicate submission detection
-- ⬜ Better input validation
-- ⬜ Improved DOCX formatting
-- ⬜ Workflow performance optimization
-- ⬜ Enhanced logging and monitoring
+```
+intake-delivery/    front end: validation, guideline, delivery
+thesis-chapters/    the writer sub-workflow
+assets/             logo
+CHANGELOG.md
+```
 
----
-
-## Version 1.2 — Better Proposal Quality
-
-### AI Improvements
-- ⬜ Improved literature retrieval
-- ⬜ Better prompt engineering
-- ⬜ Multiple proposal templates
-- ⬜ Citation consistency checks
-- ⬜ Proposal quality scoring
-- ⬜ Formatting improvements based on university guidelines
+Both folders hold their Code node bodies as real `.js` files beside the export, with tests
+that import and run those exact files. The n8n instance is the source of truth for anything
+live; these files are the design record and the importable artifact.
 
 ---
 
-## Version 1.3 — User Experience
+## Licence
 
-### Productivity Features
-- ⬜ Email progress notifications
-- ⬜ Request status tracking
-- ⬜ Estimated completion time
-- ⬜ Configurable proposal templates
-- ⬜ Support for multiple institutions
-- ⬜ Export to PDF
-
----
-
-## Version 2.0 — Complete Thesis Assistant
-
-### Major Features
-- ⬜ Chapter 4 generation
-- ⬜ Chapter 5 generation
-- ⬜ Reference management
-- ⬜ Supervisor feedback integration
-- ⬜ Revision workflow
-- ⬜ Literature database
-- ⬜ Project dashboard
-- ⬜ User authentication
-
----
-
-## Future Ideas
-
-The following features are under consideration.
-
-- ⬜ Multi-language support
-- ⬜ Plagiarism checking integration
-- ⬜ Grammar and style review
-- ⬜ Institutional template library
-- ⬜ AI-powered proposal critique
-- ⬜ Research topic recommendation
-- ⬜ Mobile-friendly dashboard
-- ⬜ API for third-party integrations
----
-
-## Disclaimer
-
-This project assists with drafting thesis proposals.
-
-Users are responsible for:
-
-- verifying factual accuracy
-- reviewing citations
-- complying with institutional guidelines
-- ensuring academic integrity
-
-The generated proposal should always undergo human review before submission.
-
----
-
-## License
-
-This project is licensed under the MIT License.
+MIT — see [LICENSE](LICENSE).
